@@ -18,7 +18,7 @@ cd "$SERVER_DIR" || exit
 
 # Clone the server repo
 echo "[*] Cloning terminal server..."
-git clone https://github.com/YOUR_USERNAME/YOUR_SERVER_REPO.git .
+git clone https://github.com/CodeNoKami/codenokami-terminal-server.git .
 
 # Install dependencies
 echo "[*] Installing Node.js..."
