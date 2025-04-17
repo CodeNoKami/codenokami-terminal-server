@@ -1,0 +1,28 @@
+{
+  "name": "codenokami-terminal-server",
+  "version": "1.0.0",
+  "description": "Terminal server for Acode plugin (CodeNoKami Terminal)",
+  "main": "index.js",
+  "bin": {
+    "run-terminal": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js --run-terminal"
+  },
+  "keywords": [
+    "terminal",
+    "xterm.js",
+    "node-pty",
+    "termux",
+    "websocket",
+    "codenokami"
+  ],
+  "author": "Nyi Nyi Phone Hlaing (CodeNoKami)",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.1.0",
+    "node-pty": "^1.0.0",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.1"
+  }
+}

@@ -1,0 +1,23 @@
+# Node modules
+node_modules/
+
+# Logs
+*.log
+
+# System files (macOS, Windows, etc.)
+.DS_Store
+Thumbs.db
+
+# IDE and editor files (Visual Studio Code, etc.)
+.vscode/
+.idea/
+
+# Environment files (if you're using dotenv or other local env files)
+.env
+
+# Temporary or build files
+*.tmp
+*.bak
+
+# Package lock file (optional, if you prefer to regenerate this with npm install)
+package-lock.json
