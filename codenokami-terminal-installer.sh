@@ -1,40 +1,34 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-echo "[*] Installing CodeNoKami Terminal Server..."
+# Configuration
+REPO_URL="https://github.com/CodeNoKami/codenokami-terminal-server.git"
+INSTALL_DIR="$HOME/.codenokami-terminal"
+PKG_NAME="codenokami-terminal"
 
-SERVER_DIR="$HOME/.codenokami-terminal"
-BIN_PATH="$PREFIX/bin/run-terminal"
+echo ">>> Updating and installing required packages..."
+apt update && apt install -y make python3 build-essential nodejs git curl
 
-# Create hidden folder if it doesn't exist
-if [ ! -d "$SERVER_DIR" ]; then
-  echo "[+] Creating server folder at $SERVER_DIR"
-  mkdir -p "$SERVER_DIR"
-else
-  echo "[i] Server folder already exists."
-fi
+echo ">>> Configuring node-gyp (GYP)..."
+mkdir -p ~/.gyp
+echo "{'variables': {'android_ndk_path': ''}}" > ~/.gyp/include.gypi
 
-# Change to the server folder
-cd "$SERVER_DIR" || exit
+echo ">>> Removing previous installation of $PKG_NAME..."
+npm uninstall -g $PKG_NAME
+rm -rf $INSTALL_DIR
 
-# Clone the server repo
-echo "[*] Cloning terminal server..."
-git clone https://github.com/CodeNoKami/codenokami-terminal-server.git .
+echo ">>> Cloning repository from GitHub..."
+git clone $REPO_URL $INSTALL_DIR
 
-# Install dependencies
-echo "[*] Installing Node.js..."
-pkg install nodejs -y
+cd $INSTALL_DIR
+
+echo ">>> Installing npm dependencies..."
 npm install
 
-# Add global run-terminal command
-echo "[*] Setting up 'run-terminal' command..."
-if [ -f "$BIN_PATH" ]; then
-  rm "$BIN_PATH"
-fi
+echo ">>> Making index.js executable..."
+chmod +x index.js
 
-# Create a symlink to index.js
-echo -e "#!/data/data/com.termux/files/usr/bin/bash\nnode $SERVER_DIR/index.js --run-terminal" > "$BIN_PATH"
-chmod +x "$BIN_PATH"
+echo ">>> Installing $PKG_NAME globally..."
+npm install -g .
 
-echo "[✓] Installation complete!"
-echo "Now you can run the terminal server with:"
-echo "  run-terminal"
+echo ">>> Installation complete!"
+echo ">>> You can now run the terminal using: run-terminal"
