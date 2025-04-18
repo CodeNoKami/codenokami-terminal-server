@@ -25,12 +25,16 @@ program.action(() => {
     }
   });
 
-  const clients = new Map();
+  // Global session storage
+  const globalSessions = new Map();
 
   io.on("connection", (socket) => {
     console.log(`[+] Client connected (${socket.id})`);
+
+    // Each socket manages its own active sessions
     const sessions = {};
 
+    // Open a new terminal session
     socket.on("open-session", () => {
       const shell = os.platform() === "win32" ? "powershell.exe" : "bash";
       const term = pty.spawn(shell, [], {
@@ -43,6 +47,7 @@ program.action(() => {
 
       const sessionId = Date.now().toString();
       sessions[sessionId] = term;
+      globalSessions.set(sessionId, { term, createdAt: Date.now() });
 
       console.log(`[+] New terminal session: ${sessionId}`);
 
@@ -53,26 +58,51 @@ program.action(() => {
       socket.emit("session-created", sessionId);
     });
 
-    socket.on("data", ({ sessionId, data }) => {
-      if (sessions[sessionId]) {
-        sessions[sessionId].write(data);
+    // Resume existing terminal session
+    socket.on("resume-session", (sessionId) => {
+      const existing = globalSessions.get(sessionId);
+      if (existing) {
+        sessions[sessionId] = existing.term;
+        console.log(`[~] Resumed session: ${sessionId}`);
+
+        existing.term.on("data", (data) => {
+          socket.emit("data", { sessionId, data });
+        });
+
+        socket.emit("session-resumed", sessionId);
+      } else {
+        console.log(`[x] Session not found: ${sessionId}`);
+        socket.emit("session-not-found", sessionId);
       }
     });
 
+    // Send input to terminal
+    socket.on("data", ({ sessionId, data }) => {
+      const term = sessions[sessionId];
+      if (term) {
+        term.write(data);
+      }
+    });
+
+    // Close a session manually
     socket.on("close-session", (sessionId) => {
       const term = sessions[sessionId];
       if (term) {
         console.log(`[-] Closing session: ${sessionId}`);
         term.kill();
         delete sessions[sessionId];
+        globalSessions.delete(sessionId);
       }
     });
 
+    // Disconnect: kill all user sessions
     socket.on("disconnect", () => {
       console.log(`[-] Client disconnected (${socket.id})`);
-      // Cleanup all terminals for this client
       Object.keys(sessions).forEach((sessionId) => {
-        sessions[sessionId].kill();
+        if (sessions[sessionId]) {
+          sessions[sessionId].kill();
+          globalSessions.delete(sessionId);
+        }
       });
     });
   });
