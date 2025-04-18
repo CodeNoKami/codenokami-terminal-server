@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 const { Command } = require("commander");
-const { WebSocketServer } = require("ws");
+const { Server } = require("socket.io");
+const http = require("http");
 const pty = require("node-pty");
 const os = require("os");
 
@@ -15,42 +16,69 @@ program
 program.option('--port <port>', 'Port number', '3000');
 
 program.action(() => {
-  const port = program.opts().port;
-  const wss = new WebSocketServer({ port });
+  const port = parseInt(program.opts().port, 10);
+  const server = http.createServer();
+  const io = new Server(server, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
 
-  console.log(`[*] CodeNoKami Terminal Server running on ws://localhost:${port}`);
+  const clients = new Map();
 
-  let sessionCount = 0;
+  io.on("connection", (socket) => {
+    console.log(`[+] Client connected (${socket.id})`);
+    const sessions = {};
 
-  wss.on("connection", (ws) => {
-    if (!ws || ws.readyState !== 1) return;
+    socket.on("open-session", () => {
+      const shell = os.platform() === "win32" ? "powershell.exe" : "bash";
+      const term = pty.spawn(shell, [], {
+        name: "xterm-color",
+        cols: 80,
+        rows: 24,
+        cwd: process.env.HOME,
+        env: process.env,
+      });
 
-    const shell = os.platform() === "win32" ? "powershell.exe" : "bash";
+      const sessionId = Date.now().toString();
+      sessions[sessionId] = term;
 
-    const ptyProcess = pty.spawn(shell, [], {
-      name: "xterm-color",
-      cols: 80,
-      rows: 24,
-      cwd: process.env.HOME,
-      env: process.env,
+      console.log(`[+] New terminal session: ${sessionId}`);
+
+      term.on("data", (data) => {
+        socket.emit("data", { sessionId, data });
+      });
+
+      socket.emit("session-created", sessionId);
     });
 
-    sessionCount++;
-    console.log(`[+] New session started (${sessionCount} total)`);
-
-    ptyProcess.on("data", (data) => {
-      ws.send(data);
+    socket.on("data", ({ sessionId, data }) => {
+      if (sessions[sessionId]) {
+        sessions[sessionId].write(data);
+      }
     });
 
-    ws.on("message", (msg) => {
-      ptyProcess.write(msg);
+    socket.on("close-session", (sessionId) => {
+      const term = sessions[sessionId];
+      if (term) {
+        console.log(`[-] Closing session: ${sessionId}`);
+        term.kill();
+        delete sessions[sessionId];
+      }
     });
 
-    ws.on("close", () => {
-      console.log("[-] Session closed");
-      ptyProcess.kill();
-      sessionCount--;
+    socket.on("disconnect", () => {
+      console.log(`[-] Client disconnected (${socket.id})`);
+      // Cleanup all terminals for this client
+      Object.keys(sessions).forEach((sessionId) => {
+        sessions[sessionId].kill();
+      });
     });
+  });
+
+  server.listen(port, () => {
+    console.log(`[*] CodeNoKami Terminal Server running on http://localhost:${port}`);
   });
 });
 
