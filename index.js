@@ -17,7 +17,19 @@ program.option('--port <port>', 'Port number', '3000');
 
 program.action(() => {
   const port = parseInt(program.opts().port, 10);
-  const server = http.createServer();
+  
+  // Vanilla HTTP server
+  const server = http.createServer((req, res) => {
+    // Handle /ping route
+    if (req.method === "GET" && req.url === "/ping") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("pong");
+    } else {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not Found");
+    }
+  });
+
   const io = new Server(server, {
     cors: {
       origin: "*",
