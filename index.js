@@ -36,14 +36,12 @@ program.action(() => {
     }
   });
 
-  const globalSessions = new Map();
+  const globalSessions = new Map(); // sessionId => { term, createdAt }
 
   io.on("connection", (socket) => {
     console.log(`[+] Client connected (${socket.id})`);
 
-    const sessions = {};
-
-    // Open new terminal session
+    // Create new session
     socket.on("open-session", () => {
       const shell = os.platform() === "win32" ? "powershell.exe" : "bash";
       const term = pty.spawn(shell, [], {
@@ -55,83 +53,100 @@ program.action(() => {
       });
 
       const sessionId = Date.now().toString();
-      sessions[sessionId] = term;
       globalSessions.set(sessionId, { term, createdAt: Date.now() });
 
-      console.log(`[+] New terminal session: ${sessionId}`);
+      console.log(`[+] New session: ${sessionId}`);
 
+      // Emit new session info
+      socket.emit("session-created", {
+        sessionId,
+        shortId: sessionId.slice(-4)
+      });
+
+      // Emit term data to client
       term.on("data", (data) => {
         socket.emit("data", { sessionId, data });
       });
 
-      socket.emit("session-created", {
-        sessionId,
-        shortId: sessionId.slice(-4) // last 4 digits for UI rendering
+      // Listen for client input
+      socket.on("data", ({ sessionId: sid, data }) => {
+        const s = globalSessions.get(sid);
+        if (s) s.term.write(data);
+      });
+
+      // Resize event
+      socket.on("resize", ({ sessionId: sid, cols, rows }) => {
+        const s = globalSessions.get(sid);
+        if (s) s.term.resize(cols, rows);
+      });
+
+      // Close manually
+      socket.on("close-session", (sid) => {
+        const s = globalSessions.get(sid);
+        if (s) {
+          s.term.kill();
+          globalSessions.delete(sid);
+          console.log(`[-] Session closed: ${sid}`);
+        }
       });
     });
 
-    // Resume terminal session
+    // Resume session
     socket.on("resume-session", (sessionId) => {
-      const existing = globalSessions.get(sessionId);
-      if (existing) {
-        const term = existing.term;
-        sessions[sessionId] = term;
+      const session = globalSessions.get(sessionId);
+      if (session) {
+        const term = session.term;
 
-        // Remove old listeners and rebind for current socket
+        // Remove old listeners before binding again
         term.removeAllListeners("data");
 
+        // Term output to client
         term.on("data", (data) => {
           socket.emit("data", { sessionId, data });
         });
 
-        // Listen for input to this terminal
-        socket.on("data", ({ sessionId: incomingId, data }) => {
-          if (incomingId === sessionId && sessions[incomingId]) {
-            sessions[incomingId].write(data);
+        // Input from client
+        socket.on("data", ({ sessionId: sid, data }) => {
+          if (sid === sessionId) {
+            term.write(data);
           }
         });
 
-        console.log(`[~] Resumed session: ${sessionId}`);
+        socket.on("resize", ({ sessionId: sid, cols, rows }) => {
+          if (sid === sessionId) {
+            term.resize(cols, rows);
+          }
+        });
+
         socket.emit("session-resumed", {
           sessionId,
           shortId: sessionId.slice(-4)
         });
+
+        console.log(`[~] Session resumed: ${sessionId}`);
       } else {
-        console.log(`[x] Session not found: ${sessionId}`);
+        console.log(`[x] Resume failed: ${sessionId}`);
         socket.emit("session-not-found", sessionId);
       }
     });
 
-    // Receive input
-    socket.on("data", ({ sessionId, data }) => {
-      const term = sessions[sessionId];
-      if (term) {
-        term.write(data);
-      }
-    });
-
-    // Manual close session
-    socket.on("close-session", (sessionId) => {
-      const term = sessions[sessionId];
-      if (term) {
-        console.log(`[-] Closing session: ${sessionId}`);
-        term.kill();
-        delete sessions[sessionId];
-        globalSessions.delete(sessionId);
-      }
-    });
-
-    // On client disconnect
+    // Don't kill session on disconnect — allow resume
     socket.on("disconnect", () => {
       console.log(`[-] Client disconnected (${socket.id})`);
-      Object.keys(sessions).forEach((sessionId) => {
-        if (sessions[sessionId]) {
-          sessions[sessionId].kill();
-          globalSessions.delete(sessionId);
-        }
-      });
     });
   });
+
+  // Auto-kill stale sessions (30 mins)
+  setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, session] of globalSessions.entries()) {
+      if (now - session.createdAt > 30 * 60 * 1000) {
+        session.term.kill();
+        globalSessions.delete(sessionId);
+        console.log(`[-] Auto-killed stale session: ${sessionId}`);
+      }
+    }
+  }, 10 * 60 * 1000);
 
   server.listen(port, () => {
     console.log(`[*] CodeNoKami Terminal Server running on http://localhost:${port}`);
