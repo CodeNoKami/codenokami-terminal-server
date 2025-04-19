@@ -5,22 +5,21 @@ const { Server } = require("socket.io");
 const http = require("http");
 const pty = require("node-pty");
 const os = require("os");
+const { v4: uuidv4 } = require("uuid");
 
 const program = new Command();
 
 program
   .name("run-terminal")
   .description("Start CodeNoKami Terminal Server")
-  .version("1.0.0");
-
-program.option('--port <port>', 'Port number', '3000');
+  .version("1.0.0")
+  .option("--port <port>", "Port number", "3000");
 
 program.action(() => {
   const port = parseInt(program.opts().port, 10);
-  
-  // Vanilla HTTP server
+
+  // HTTP server
   const server = http.createServer((req, res) => {
-    // Handle /ping route
     if (req.method === "GET" && req.url === "/ping") {
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("pong");
@@ -33,31 +32,30 @@ program.action(() => {
   const io = new Server(server, {
     cors: {
       origin: "*",
-      methods: ["GET", "POST"]
-    }
+      methods: ["GET", "POST"],
+    },
   });
 
-  // Global session storage
+  // Global terminal session store
   const globalSessions = new Map();
 
   io.on("connection", (socket) => {
     console.log(`[+] Client connected (${socket.id})`);
 
-    // Each socket manages its own active sessions
     const sessions = {};
 
-    // Open a new terminal session
+    // Open new terminal session
     socket.on("open-session", () => {
       const shell = os.platform() === "win32" ? "powershell.exe" : "bash";
       const term = pty.spawn(shell, [], {
         name: "xterm-color",
         cols: 80,
         rows: 24,
-        cwd: process.env.HOME,
+        cwd: process.env.HOME || process.cwd(),
         env: process.env,
       });
 
-      const sessionId = Date.now().toString();
+      const sessionId = uuidv4();
       sessions[sessionId] = term;
       globalSessions.set(sessionId, { term, createdAt: Date.now() });
 
@@ -70,7 +68,7 @@ program.action(() => {
       socket.emit("session-created", sessionId);
     });
 
-    // Resume existing terminal session
+    // Resume terminal session
     socket.on("resume-session", (sessionId) => {
       const existing = globalSessions.get(sessionId);
       if (existing) {
@@ -88,7 +86,7 @@ program.action(() => {
       }
     });
 
-    // Send input to terminal
+    // Terminal input
     socket.on("data", ({ sessionId, data }) => {
       const term = sessions[sessionId];
       if (term) {
@@ -96,7 +94,7 @@ program.action(() => {
       }
     });
 
-    // Close a session manually
+    // Manual session close
     socket.on("close-session", (sessionId) => {
       const term = sessions[sessionId];
       if (term) {
@@ -107,7 +105,7 @@ program.action(() => {
       }
     });
 
-    // Disconnect: kill all user sessions
+    // Socket disconnect
     socket.on("disconnect", () => {
       console.log(`[-] Client disconnected (${socket.id})`);
       Object.keys(sessions).forEach((sessionId) => {
@@ -117,6 +115,16 @@ program.action(() => {
         }
       });
     });
+  });
+
+  // Graceful shutdown
+  process.on("SIGINT", () => {
+    console.log("\n[!] Server shutting down...");
+    globalSessions.forEach(({ term }, sessionId) => {
+      term.kill();
+      console.log(`[-] Closed session: ${sessionId}`);
+    });
+    process.exit();
   });
 
   server.listen(port, () => {
