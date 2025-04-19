@@ -7,7 +7,7 @@
     "run-terminal": "index.js"
   },
   "scripts": {
-    "start": "node index.js --run-terminal"
+    "start": "node index.js"
   },
   "keywords": [
     "terminal",
@@ -22,8 +22,7 @@
   "dependencies": {
     "commander": "^11.1.0",
     "node-pty": "^1.0.0",
-    "uuid": "^11.1.0",
-    "ws": "^8.18.1",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
   }
 }
